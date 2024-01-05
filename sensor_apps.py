@@ -59,7 +59,7 @@ def humidity_sensor():
             # generate a random humidity value between 40 and 90
             humidity_value = random.uniform(40, 90)
 
-            timestamp = time.time() # get the current time to check if the sensor is alive
+            timestamp = time.time()  # get the current time to check if the sensor is alive
 
             # create the message and log
             message = f"HUMIDITY:{humidity_value},{get_time()}"

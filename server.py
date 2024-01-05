@@ -1,8 +1,13 @@
 import socket
 import threading
-import http.server
-import socketserver
-from urllib.parse import urlparse, parse_qs
+import logging
+import time
+from datetime import datetime
+
+import html_parser
+
+logging.basicConfig(level=logging.DEBUG, filename='server.log', filemode='w')
+logger = logging.getLogger(__name__)
 
 
 class SensorServer:
@@ -14,80 +19,96 @@ class SensorServer:
 
     def start(self):
         threading.Thread(target=self.start_server).start()
-        threading.Thread(target=self.start_http_server).start()
 
     def start_server(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s_tcp, \
-             socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s_udp:
-            s_tcp.bind((self.host, self.port + 1))
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s_tcp:
+            s_tcp.bind((self.host, self.port))  # self.host
             s_tcp.listen()
-            print(f"TCP/UDP Server listening on port {self.port + 1}")
+            print(f"TCP Server listening on port {self.port}")
 
             while True:
-                try:
-                    conn, addr = s_tcp.accept()
-                    with conn:
-                        print('Connected by', addr)
-                        data = conn.recv(1024)
-                        if not data:
-                            break
-                        self.handle_sensor_data(data.decode())
-                except socket.error:
-                    pass
+                conn, addr = s_tcp.accept()
+                print('Connected by', addr)
+                data = conn.recv(1024)
+                if not data:
+                    print("Connection to gateway data is null. Connection is broken.")
+                    continue
+                self.handle_received_data(conn,data.decode())
 
-                try:
-                    data, addr = s_udp.recvfrom(1024)
-                    self.handle_sensor_data(data.decode())
-                except socket.error:
-                    pass
+    def handle_received_data(self, conn, data):
+        # data is decoded by the caller side
 
-    def start_http_server(self):
-        handler = MyRequestHandler
-        with socketserver.TCPServer((self.host, self.port), handler) as httpd:
-            print(f"HTTP server listening on port {self.port}")
-            httpd.sensor_server = self
-            httpd.serve_forever()
+        logging_message = f'Received_at : {data}'
+        logger.debug(logging_message)
 
-    def handle_sensor_data(self, data):
-        sensor_type, value, timestamp = data.split('|')
+        if data.__contains__('GET'):
+            self.html_handler(conn, data)
+            return
+        elif (data.__contains__('GATEWAY ON')
+              or data.__contains__('TEMP SENSOR OFF')) \
+                or data.__contains__('ALIVE') \
+                or data.__contains__('HUMIDITY SENSOR OFF'):
+
+            logger_message = f'Received_at : {get_time()} ; Gateway Message: {data}'
+            logger.info(logger_message)
+            print(logger_message)
+            return
+
+        self.record_sensor_data(data)
+
+    def record_sensor_data(self, decoded_data):
+        data = decoded_data
+
+        data = data.split(",")
+
+        sensor_information = data[0].split(":")
+        sensor_type = sensor_information[0]
+        value = sensor_information[1]
+
+        if sensor_type == "TEMP":
+            sensor_type = "temperature"
+        elif sensor_type == "HUMIDITY":
+            sensor_type = "humidity"
+
         with self.lock:
-            self.data_dict[sensor_type.lower()].append({'value': float(value), 'timestamp': float(timestamp)})
+            self.data_dict[sensor_type.lower()].append({'value': value, 'timestamp': data[1]})
+
+    def html_handler(self, conn, data):
+        # requested url is /temperature or /humidity
+        if data.__contains__('/temperature '):
+            html = html_parser.return_html_file((self.get_sensor_data('temperature')), 'html files/temperature.html')
+            conn.sendall(b'HTTP/1.1 200 OK\n')
+            conn.sendall(b'Content-Type: text/html\n')
+            conn.sendall(b'\n')
+            conn.sendall(html.encode())
+            conn.close()
+            print("GET")
+            return
+        elif data.__contains__('/humidity '):
+            html = html_parser.return_html_file((self.get_sensor_data('humidity')), 'html files/humidity.html')
+            conn.sendall(b'HTTP/1.1 200 OK\n')
+            conn.sendall(b'Content-Type: text/html\n')
+            conn.sendall(b'\n')
+            conn.sendall(html.encode())
+            conn.close()
+            print("GET")
+            return
+        conn.sendall(b'HTTP/1.1 200 OK\n')
+        conn.sendall(b'Content-Type: text/html\n')
+        conn.sendall(b'\n')
+        conn.sendall(b'<h1>404 Not Found</h1>')
+        conn.close()
 
     def get_sensor_data(self, sensor_type):
         with self.lock:
             return self.data_dict[sensor_type.lower()]
 
 
-class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
-    def do_GET(self):
-        parsed_path = urlparse(self.path)
-        path = parsed_path.path
-        query_params = parse_qs(parsed_path.query)
-
-        if path == '/temperature':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            data = self.server.sensor_server.get_sensor_data('temperature')
-            self.wfile.write(str(data).encode())
-        elif path == '/humidity':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            data = self.server.sensor_server.get_sensor_data('humidity')
-            self.wfile.write(str(data).encode())
-        elif path == '/gethumidity':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            data = self.server.sensor_server.get_sensor_data('humidity')
-            if data:
-                last_measurement = data[-1]
-                self.wfile.write(f"Last Humidity Measurement: {last_measurement}".encode())
-            else:
-                self.wfile.write("No Humidity Data Available".encode())
-        else:
-            super().do_GET()
+# Getting the current time in a formatted way
+def get_time():
+    current_time = time.time()
+    formatted_time = datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+    return formatted_time
 
 
 if __name__ == "__main__":
