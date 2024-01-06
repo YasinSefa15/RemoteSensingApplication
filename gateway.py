@@ -36,6 +36,7 @@ class Gateway:
         self.send_message_to_server()
         threading.Thread(target=self.startTCP).start()
         threading.Thread(target=self.startUDP).start()
+        threading.Thread(target=self.listen_server).start()
 
     # Send gateway on message to the server
     def send_message_to_server(self):
@@ -163,6 +164,65 @@ class Gateway:
 
         except socket.error as e:
             print(f"Connection to server failed: {e}")
+
+    def listen_server(self):
+        with (socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s):
+            # server sends an message. when server sends an message, message will be sent to the sensor apps.
+            # and sensor apps will send the message to the gateway.
+            s.bind(('localhost', 6666))
+            s.listen()
+            print("TCP Server is listening for Server...")
+
+            # listen to the server
+            while True:
+                client_socket, addr = s.accept()
+                print(f"Connection from {addr}")
+                # Veri almak
+                data = client_socket.recv(1024)
+                decoded_data = data.decode()
+                print(f"Received data from server: {decoded_data}")
+                logger_message = f'Received from server at : {get_time()},Last Measured Humidity Value: {decoded_data}'
+                logger.debug(logger_message)
+
+                # sent to the sensor apps and get the response from the sensor apps
+
+                # Veri göndermek
+                response = self.send_to_sensor_apps(decoded_data)
+
+                if response is None:
+                    response = "sensor apps is not working"
+                    logging.debug("humidity sensor app is not working")
+
+                logger_message = f'Sent to server at : {get_time()},Last Measured Humidity Value: {response}'
+                logger.debug(logger_message)
+                print("Sending to server: " + response)
+
+                client_socket.sendall(response.encode())
+
+    def send_to_sensor_apps(self, decoded_data):
+        try:
+            print("Sending to sensor apps: " + decoded_data)
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect(('localhost', 6667))
+                print(f"Connected to sensor apps {self.host}:{self.port}")
+
+                logger_message = "Gateway sent to sensor apps at: " + get_time() + " ; " + decoded_data
+                logger.info(logger_message)
+                print("Sending to sensor apps: " + decoded_data)
+
+                s.sendall(decoded_data.encode())
+                print("sent")
+
+                # get the response from the sensor apps
+                data = s.recv(1024)
+                decoded_data = data.decode()
+                print(f"Received data from sensor apps: {decoded_data}")
+                logger_message = f'Received from sensor apps at : {get_time()},Last Measured Humidity Value: {decoded_data}'
+                logger.debug(logger_message)
+                return decoded_data
+
+        except socket.error as e:
+            print(f"Connection to sensor apps failed: {e}")
 
 
 # Main function

@@ -18,6 +18,9 @@ from datetime import datetime
 logging.basicConfig(level=logging.DEBUG, filename='sensor_apps.log', filemode='w')
 logger = logging.getLogger(__name__)
 
+last_measured_humidity = 0
+humidity_lock = threading.Lock()
+
 
 def temperature_sensor():
     host = "localhost"
@@ -38,7 +41,7 @@ def temperature_sensor():
                 # log the message
                 logger_message = f'Sent_at : {get_time()} ; Temperature Sensor: {message}'
                 logger.debug(logger_message)
-                # print(logger_message) # if you want to print to console, uncomment this line
+                print(logger_message) # if you want to print to console, uncomment this line
                 # time.sleep(random.uniform(0.5, 6.5)) # random delay between 0.5 and 6.5 seconds to test the sensor
 
                 # 1 second delay
@@ -50,6 +53,7 @@ def temperature_sensor():
 
 
 def humidity_sensor():
+    global last_measured_humidity
     host = "localhost"
     port = 5556
 
@@ -58,6 +62,8 @@ def humidity_sensor():
         while True:
             # generate a random humidity value between 40 and 90
             humidity_value = random.uniform(40, 90)
+            with humidity_lock:
+                last_measured_humidity = humidity_value
 
             timestamp = time.time()  # get the current time to check if the sensor is alive
 
@@ -66,7 +72,7 @@ def humidity_sensor():
             logger_message = f'Generated_at : {get_time()} ; Humidity Sensor Value: {message}'
             logger.info(logger_message)
 
-            # print(logger_message) # if you want to print to console, uncomment this line
+            print(logger_message) # if you want to print to console, uncomment this line
 
             # send the message if the humidity value is greater than 80 and log
             if humidity_value > 80:
@@ -74,7 +80,7 @@ def humidity_sensor():
 
                 logger_message = f'Sent_at : {get_time()} ; Humidity Sensor Value: {message}'
                 logger.info(logger_message)
-                # print(logger_message)  # if you want to print to console, uncomment this line
+                print(logger_message)  # if you want to print to console, uncomment this line
 
             # Send 'ALIVE' message every 3 seconds
             if int(timestamp) % 3 == 0:
@@ -92,12 +98,42 @@ def humidity_sensor():
 def handle_sensors():
     temperature_thread = threading.Thread(target=temperature_sensor)
     humidity_thread = threading.Thread(target=humidity_sensor)
+    listen_to_gateway_thread = threading.Thread(target=listen_to_gateway)
 
     temperature_thread.start()
     humidity_thread.start()
+    listen_to_gateway_thread.start()
 
     temperature_thread.join()
     humidity_thread.join()
+    listen_to_gateway_thread.join()
+
+
+def listen_to_gateway():
+    global last_measured_humidity
+    with (socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s):
+        s.bind(('localhost', 6667))
+        s.listen()
+
+        print("TCP Server is listening for GATEWAY...")
+
+        while True:
+            client_socket, addr = s.accept()
+            print(f"Connection from {addr}")
+            # Veri almak
+            data = client_socket.recv(1024)
+            decoded_data = data.decode()
+            print(f"Received data from gateway: {decoded_data}")
+            logger_message = f'Received from gateway at : {get_time()},Last Measured Humidity Value: {decoded_data}'
+            logger.debug(logger_message)
+
+            # Veri göndermek
+            with humidity_lock:
+                response = str(last_measured_humidity)
+            logger_message = f'Sent to gateway at : {get_time()},Last Measured Humidity Value: {response}'
+            logger.debug(logger_message)
+            print("Sending to gateway: " + response)
+            client_socket.sendall(response.encode())
 
 
 # Get the current time in the format of 'YYYY-MM-DD HH:MM:SS'

@@ -6,6 +6,10 @@
 def return_html_file(data, file_name):
     html = open(file_name, 'r').read()
 
+    if file_name == 'html files/last_measured_humidity.html':
+        html = html.replace('last_measured_humidity', str(data))
+        return html
+
     html_data = '<table id="sensorTable">'
     # if data list is empty
     if not data:

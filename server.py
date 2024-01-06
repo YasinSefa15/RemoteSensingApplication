@@ -16,6 +16,7 @@ class SensorServer:
         self.port = port
         self.data_dict = {'temperature': [], 'humidity': []}
         self.lock = threading.Lock()
+        self.last_measured_humidity = 0
 
     def start(self):
         threading.Thread(target=self.start_server).start()
@@ -33,7 +34,7 @@ class SensorServer:
                 if not data:
                     print("Connection to gateway data is null. Connection is broken.")
                     continue
-                self.handle_received_data(conn,data.decode())
+                self.handle_received_data(conn, data.decode())
 
     def handle_received_data(self, conn, data):
         # data is decoded by the caller side
@@ -93,11 +94,34 @@ class SensorServer:
             conn.close()
             print("GET")
             return
+        elif data.__contains__('/gethumidity '):
+            get_last_measured_humidity_thread = threading.Thread(target=self.get_last_measured_humidity)
+            get_last_measured_humidity_thread.start()
+            get_last_measured_humidity_thread.join()
+            html = html_parser.return_html_file(self.last_measured_humidity, 'html files/last_measured_humidity.html')
+            conn.sendall(b'HTTP/1.1 200 OK\n')
+            conn.sendall(b'Content-Type: text/html\n')
+            conn.sendall(b'\n')
+            conn.sendall(html.encode())
+            conn.close()
+            print("GET")
+            return
         conn.sendall(b'HTTP/1.1 200 OK\n')
         conn.sendall(b'Content-Type: text/html\n')
         conn.sendall(b'\n')
         conn.sendall(b'<h1>404 Not Found</h1>')
         conn.close()
+
+    def get_last_measured_humidity(self):
+        # sent to the gateway and get the data from the gateway
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s_tcp:
+            s_tcp.connect(('localhost', 6666))
+            s_tcp.sendall(b'GET LAST HUMIDITY')
+            print("GET LAST HUMIDITY")
+            data = s_tcp.recv(1024)
+            print("received" + data.decode())
+            self.last_measured_humidity = data.decode()
+            s_tcp.close()
 
     def get_sensor_data(self, sensor_type):
         with self.lock:
