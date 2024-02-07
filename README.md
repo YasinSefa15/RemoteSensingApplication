@@ -20,25 +20,20 @@ Here's a concise guide for running the applications in your project:
 
 ## Running the Applications
 
-1. **Temperature Sensor**
+1. **Temperature Sensor & Humidity Sensor**
    - Open a terminal.
-   - Navigate to the temperature sensor directory.
-   - Run the application using `python temperature_sensor.py`.
+   - Navigate to the sensor directory.
+   - Run the application using `python sensor_apps.py`.
    - The sensor will start sending data every second.
-
-2. **Humidity Sensor**
-   - Open another terminal.
-   - Go to the humidity sensor directory.
-   - Execute `python humidity_sensor.py`.
    - The sensor will send data on exceeding 80% humidity and an 'ALIVE' message every 3 seconds.
 
-3. **Gateway**
+2. **Gateway**
    - Open a third terminal.
    - Navigate to the gateway directory.
    - Start the gateway using `python gateway.py`.
    - It will receive data from both sensors and forward it to the server.
 
-4. **Server**
+3. **Server**
    - In a new terminal, go to the server directory.
    - Launch the server with `python server.py`.
    - The server begins storing data and serves the web interface at `http://localhost:8080`.
